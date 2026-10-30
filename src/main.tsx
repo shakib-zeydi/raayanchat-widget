@@ -26,7 +26,7 @@ function initWidget() {
   const currentScript =
     document.currentScript || document.querySelector("script[data-website-id]");
 
-  const websiteId = currentScript?.getAttribute("data-website-id") || "01m616eq1q83weekt4eeecc4p2";
+  const websiteId = currentScript?.getAttribute("data-website-id") || "01m66k0kxp366x9tcdahb8g2k1";
   const themeColor =
     currentScript?.getAttribute("data-theme-color") || "#09c82c";
 

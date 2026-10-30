@@ -56,7 +56,7 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
     initialWelcomeMessage,
   ]);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
 
   // ۱. فچ کردن تاریخچه پیام‌ها هنگام باز شدن مکالمه قبلی
   useEffect(() => {
@@ -131,19 +131,15 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
     }
 
     const echo = getEcho();
+
     if (!echo) {
       console.warn("WS: Echo instance not found");
       return;
     }
 
-    console.log(
-      "WS: Subscribing to channel:",
-      `conversation.${conversationPublicId}`,
-    );
     const channel = echo.channel(`conversation.${conversationPublicId}`);
 
     channel.listen(".SendMessage", (payload: SocketMessagePayload) => {
-      console.log("WS: Event received in widget! Payload:", payload);
       const incomingMessage = payload.message;
       if (!incomingMessage) return;
 
