@@ -11,11 +11,18 @@ declare global {
 window.Pusher = Pusher;
 
 let echoInstance: Echo<"reverb"> | null = null;
+let activeToken: string | null = null;
 
-export const getEcho = () => {
+export const getEcho = (token: string) => {
   if (typeof window === "undefined") return null;
 
+  if (echoInstance && activeToken !== token) {
+    echoInstance.disconnect();
+    echoInstance = null;
+  }
+
   if (!echoInstance) {
+    activeToken = token;
     echoInstance = new Echo({
       broadcaster: "reverb",
       key: import.meta.env.VITE_REVERB_APP_KEY,
@@ -24,6 +31,8 @@ export const getEcho = () => {
       wssPort: Number(import.meta.env.VITE_REVERB_PORT || 443),
       forceTLS: (import.meta.env.VITE_REVERB_SCHEME || "http") === "https",
       enabledTransports: ["ws", "wss"],
+      authEndpoint: `${import.meta.env.VITE_API_BASE_URL}/widget/broadcasting/auth`,
+      auth: { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } },
     });
   }
 

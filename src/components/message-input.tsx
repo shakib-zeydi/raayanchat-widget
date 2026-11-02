@@ -3,7 +3,7 @@ import { useState } from "react";
 interface IProps {
   themeColor: string;
   isSending: boolean;
-  onSend: (text: string) => void;
+  onSend: (text: string) => Promise<boolean>;
 }
 
 export default function MessageInput({
@@ -13,11 +13,10 @@ export default function MessageInput({
 }: IProps) {
   const [value, setValue] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!value.trim() || isSending) return;
-    onSend(value.trim());
-    setValue("");
+    if (await onSend(value.trim())) setValue("");
   };
 
   return (

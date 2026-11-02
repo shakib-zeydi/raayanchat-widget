@@ -15,12 +15,17 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
   // کلیدهای ذخیره‌سازی محلی برای هر سایت
   const visitorKey = `visitor_${websiteID}`;
   const convKey = `visitor_conv_${websiteID}`;
+  const tokenKey = `visitor_token_${websiteID}`;
+  const [token, setToken] = useState<string | null>(() => {
+    try { return localStorage.getItem(tokenKey); } catch { return null; }
+  });
+  const [messageError, setMessageError] = useState("");
 
   // خواندن اولیه از LocalStorage
   const [visitorPublicId, setVisitorPublicId] = useState<string | null>(() => {
     try {
       return typeof window !== "undefined"
-        ? localStorage.getItem(visitorKey)
+        ? (localStorage.getItem(tokenKey) ? localStorage.getItem(visitorKey) : null)
         : null;
     } catch {
       return null;
@@ -32,7 +37,7 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
   >(() => {
     try {
       return typeof window !== "undefined"
-        ? localStorage.getItem(convKey)
+        ? (localStorage.getItem(tokenKey) ? localStorage.getItem(convKey) : null)
         : null;
     } catch {
       return null;
@@ -41,7 +46,7 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
 
   const [visitorStep, setVisitorStep] = useState<"form" | "chat">(() => {
     try {
-      return typeof window !== "undefined" && localStorage.getItem(visitorKey)
+      return typeof window !== "undefined" && localStorage.getItem(tokenKey) && localStorage.getItem(visitorKey)
         ? "chat"
         : "form";
     } catch {
@@ -56,46 +61,42 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
     initialWelcomeMessage,
   ]);
   const [isSendingMessage, setIsSendingMessage] = useState(false);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(Boolean(conversationPublicId));
 
   // ۱. فچ کردن تاریخچه پیام‌ها هنگام باز شدن مکالمه قبلی
   useEffect(() => {
-    if (!visitorPublicId || !conversationPublicId) {
+    if (!visitorPublicId || !conversationPublicId || !token) {
       return;
     }
 
     let isCancelled = false;
 
     const loadHistory = async () => {
-      queueMicrotask(() => {
-        if (!isCancelled) {
-          setIsLoadingHistory(true);
-        }
-      });
-
       try {
+        let page = 1;
+        let lastPage = 1;
+        const rawList: ServerMessageItem[] = [];
+        do {
         const res = await fetch(
-          `${API_BASE_URL}/visitors/${encodeURIComponent(visitorPublicId)}/conversations/${encodeURIComponent(conversationPublicId)}/messages`,
+          `${API_BASE_URL}/visitors/${encodeURIComponent(visitorPublicId)}/conversations/${encodeURIComponent(conversationPublicId)}/messages?per_page=100&page=${page}`,
           {
             credentials: "omit",
             headers: {
               Accept: "application/json",
               "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
             },
           },
         );
 
-        if (!res.ok) return;
+        if (!res.ok) throw new Error("خطا در دریافت پیام‌ها");
 
         const result = await res.json();
 
-        const rawList: ServerMessageItem[] = Array.isArray(result.data?.data)
-          ? result.data.data
-          : Array.isArray(result.data)
-            ? result.data
-            : Array.isArray(result)
-              ? result
-              : [];
+        if (Array.isArray(result.data?.data)) rawList.push(...result.data.data);
+        lastPage = result.data?.meta?.last_page || 1;
+        page++;
+        } while (page <= lastPage && !isCancelled);
 
         if (!isCancelled && rawList.length > 0) {
           const mappedMessages: ChatMessage[] = rawList.map((item) => ({
@@ -105,10 +106,14 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
             created_at: item.created_at,
           }));
 
-          setMessages([initialWelcomeMessage, ...mappedMessages]);
+          setMessages((previous) => {
+            const ids = new Set(mappedMessages.map((message) => message.id));
+            return [initialWelcomeMessage, ...mappedMessages, ...previous.filter((message) => message.id !== initialWelcomeMessage.id && !ids.has(message.id) && !message.id.startsWith("temp-"))];
+          });
         }
       } catch (err) {
         console.warn("خطا در دریافت پیام‌ها:", err);
+        if (!isCancelled) setMessageError("دریافت پیام‌ها انجام نشد.");
       } finally {
         if (!isCancelled) {
           setIsLoadingHistory(false);
@@ -117,27 +122,29 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
     };
 
     void loadHistory();
+    const timer = window.setInterval(() => void loadHistory(), 15000);
 
     return () => {
       isCancelled = true;
+      window.clearInterval(timer);
     };
-  }, [visitorPublicId, conversationPublicId]);
+  }, [visitorPublicId, conversationPublicId, token]);
 
   // ۲. لیسنر سوکت (گوش دادن به پیام‌های جدید در کانال این مکالمه)
   useEffect(() => {
-    if (!conversationPublicId) {
+    if (!conversationPublicId || !token) {
       console.log("WS: conversationPublicId is null yet");
       return;
     }
 
-    const echo = getEcho();
+    const echo = getEcho(token);
 
     if (!echo) {
       console.warn("WS: Echo instance not found");
       return;
     }
 
-    const channel = echo.channel(`conversation.${conversationPublicId}`);
+    const channel = echo.private(`conversation.${conversationPublicId}`);
 
     channel.listen(".SendMessage", (payload: SocketMessagePayload) => {
       const incomingMessage = payload.message;
@@ -187,7 +194,7 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
       channel.stopListening(".SendMessage");
       echo.leave(`conversation.${conversationPublicId}`);
     };
-  }, [conversationPublicId]);
+  }, [conversationPublicId, token]);
 
   // ۳. ثبت بازدیدکننده (فرم ورود)
   const handleVisitorSubmit = async (formData: VisitorFormData) => {
@@ -228,13 +235,20 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
       }
 
       const returnedVisitorId = responseData.data?.public_id;
-      if (returnedVisitorId) {
+      const returnedToken = responseData.data?.token;
+      if (returnedVisitorId && typeof returnedToken === "string") {
         try {
           localStorage.setItem(visitorKey, returnedVisitorId);
-          setVisitorPublicId(returnedVisitorId);
+          localStorage.setItem(tokenKey, returnedToken);
+          localStorage.removeItem(convKey);
         } catch (e) {
           console.warn("Storage warning:", e);
         }
+        setVisitorPublicId(returnedVisitorId);
+        setToken(returnedToken);
+        setConversationPublicId(null);
+      } else {
+        throw new Error("پاسخ سرور معتبر نیست.");
       }
 
       setVisitorStep("chat");
@@ -249,7 +263,8 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
 
   // ۴. ارسال پیام
   const handleSendMessage = async (text: string) => {
-    if (!visitorPublicId || isSendingMessage) return;
+    if (!visitorPublicId || !token || isSendingMessage) return false;
+    setMessageError("");
 
     // ثبت پیام خود ویزیتور به صورت خوش‌بینانه (Optimistic)
     const tempMessageId = `temp-${Date.now()}`;
@@ -272,6 +287,7 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
             headers: {
               Accept: "application/json",
               "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify({ message: text }),
           },
@@ -283,14 +299,16 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
           const newConvId = convData.data.public_id;
           try {
             localStorage.setItem(convKey, newConvId);
-            setConversationPublicId(newConvId);
           } catch (e) {
             console.warn(e);
           }
+          setConversationPublicId(newConvId);
+        } else {
+          throw new Error(convData.message || "ارسال پیام انجام نشد.");
         }
       } else {
         // پیام‌های بعدی در مکالمه جاری
-        await fetch(
+        const response = await fetch(
           `${API_BASE_URL}/visitors/${encodeURIComponent(
             visitorPublicId,
           )}/conversations/${encodeURIComponent(conversationPublicId)}/messages`,
@@ -300,13 +318,26 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
             headers: {
               Accept: "application/json",
               "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify({ body: text }),
           },
         );
+        const result = await response.json().catch(() => null);
+        if (!response.ok || !result?.data) throw new Error(result?.message || "ارسال پیام انجام نشد.");
+        const item = result.data as ServerMessageItem;
+        const id = String(item.public_id || item.id);
+        setMessages((prev) => {
+          const withoutTemp = prev.filter((message) => message.id !== tempMessageId);
+          return withoutTemp.some((message) => message.id === id) ? withoutTemp : [...withoutTemp, { id, sender: "visitor", text: item.body || text, created_at: item.created_at }];
+        });
       }
+      return true;
     } catch (error) {
       console.error("Message send failure:", error);
+      setMessages((prev) => prev.filter((message) => message.id !== tempMessageId));
+      setMessageError(error instanceof Error ? error.message : "ارسال پیام انجام نشد.");
+      return false;
     } finally {
       setIsSendingMessage(false);
     }
@@ -322,6 +353,7 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
     messages,
     isLoadingHistory,
     isSendingMessage,
+    messageError,
     handleSendMessage,
   };
 }
