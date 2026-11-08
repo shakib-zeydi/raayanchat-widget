@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getEcho } from "../lib/echo";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL + "/widget";
+const API_BASE_URL = `${import.meta.env.VITE_API_BASE_URL}/widget`;
 
 const initialWelcomeMessage: ChatMessage = {
   id: "welcome-msg",
@@ -9,202 +9,382 @@ const initialWelcomeMessage: ChatMessage = {
   text: "سلام! وقت بخیر. چطور می‌توانیم کمکتان کنیم؟",
 };
 
-export default function useWidget({ websiteID }: { websiteID: string }) {
-  const [isOpen, setIsOpen] = useState(false);
+interface ConversationState {
+  public_id: string;
+  status: string;
+  closed_at: string | null;
+}
 
-  // کلیدهای ذخیره‌سازی محلی برای هر سایت
+interface ApiMessage {
+  id?: number | string;
+  public_id?: string;
+  sender: "operator" | "visitor";
+  body: string;
+  created_at?: string;
+}
+
+interface ApiResponse {
+  message?: string;
+  code?: string;
+
+  // قرارداد وضعیت گفتگو، توضیح پایین کد
+  conversation?: ConversationState;
+
+  data?: {
+    public_id?: string;
+    token?: string;
+    status?: string;
+    closed_at?: string | null;
+
+    // پاسخ ارسال پیام
+    id?: number | string;
+    sender?: "operator" | "visitor";
+    body?: string;
+    created_at?: string;
+
+    // پاسخ تاریخچه
+    data?: ApiMessage[];
+    meta?: {
+      last_page?: number;
+    };
+  };
+}
+
+interface MessageEvent {
+  message?: ApiMessage;
+}
+
+interface ConversationUpdatedEvent {
+  conversation: ConversationState;
+}
+
+function readStorage(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function isClosed(conversation: ConversationState | null): boolean {
+  return Boolean(
+    conversation &&
+    (conversation.closed_at ||
+      conversation.status === "closed" ||
+      conversation.status === "rejected"),
+  );
+}
+
+function mapMessage(item: ApiMessage): ChatMessage | null {
+  const id = item.public_id ?? item.id;
+
+  if (id === undefined || id === null) return null;
+
+  return {
+    id: String(id),
+    sender: item.sender,
+    text: item.body ?? "",
+    created_at: item.created_at,
+  };
+}
+
+export default function useWidget({ websiteID }: { websiteID: string }) {
   const visitorKey = `visitor_${websiteID}`;
   const convKey = `visitor_conv_${websiteID}`;
   const tokenKey = `visitor_token_${websiteID}`;
-  const [token, setToken] = useState<string | null>(() => {
-    try { return localStorage.getItem(tokenKey); } catch { return null; }
-  });
-  const [messageError, setMessageError] = useState("");
 
-  // خواندن اولیه از LocalStorage
-  const [visitorPublicId, setVisitorPublicId] = useState<string | null>(() => {
-    try {
-      return typeof window !== "undefined"
-        ? (localStorage.getItem(tokenKey) ? localStorage.getItem(visitorKey) : null)
-        : null;
-    } catch {
-      return null;
-    }
-  });
+  const [isOpen, setIsOpen] = useState(false);
+
+  const [token, setToken] = useState<string | null>(() =>
+    readStorage(tokenKey),
+  );
+
+  const [visitorPublicId, setVisitorPublicId] = useState<string | null>(() =>
+    readStorage(tokenKey) ? readStorage(visitorKey) : null,
+  );
 
   const [conversationPublicId, setConversationPublicId] = useState<
     string | null
-  >(() => {
-    try {
-      return typeof window !== "undefined"
-        ? (localStorage.getItem(tokenKey) ? localStorage.getItem(convKey) : null)
-        : null;
-    } catch {
-      return null;
-    }
-  });
+  >(() => (readStorage(tokenKey) ? readStorage(convKey) : null));
 
-  const [visitorStep, setVisitorStep] = useState<"form" | "chat">(() => {
-    try {
-      return typeof window !== "undefined" && localStorage.getItem(tokenKey) && localStorage.getItem(visitorKey)
-        ? "chat"
-        : "form";
-    } catch {
-      return "form";
-    }
-  });
+  const [visitorStep, setVisitorStep] = useState<"form" | "chat">(() =>
+    readStorage(tokenKey) && readStorage(visitorKey) ? "chat" : "form",
+  );
 
-  const [isSubmittingVisitor, setIsSubmittingVisitor] = useState(false);
-  const [visitorError, setVisitorError] = useState("");
+  const [conversation, setConversation] = useState<ConversationState | null>(
+    null,
+  );
+
+  const conversationRef = useRef<ConversationState | null>(null);
+  const sendLockRef = useRef(false);
+  const visitorLockRef = useRef(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     initialWelcomeMessage,
   ]);
-  const [isSendingMessage, setIsSendingMessage] = useState(false);
-  const [isLoadingHistory, setIsLoadingHistory] = useState(Boolean(conversationPublicId));
 
-  // ۱. فچ کردن تاریخچه پیام‌ها هنگام باز شدن مکالمه قبلی
+  const [isSubmittingVisitor, setIsSubmittingVisitor] = useState(false);
+  const [visitorError, setVisitorError] = useState("");
+
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [messageError, setMessageError] = useState("");
+
+  const [historyPending, setIsLoadingHistory] = useState(
+    Boolean(visitorPublicId && conversationPublicId && token),
+  );
+
+  const canLoadHistory = Boolean(
+    visitorPublicId && conversationPublicId && token,
+  );
+
+  const isLoadingHistory = canLoadHistory && historyPending;
+
+  function applyConversation(next: ConversationState) {
+    conversationRef.current = next;
+    setConversation(next);
+  }
+
+  function markConversationClosed(publicId: string) {
+    const current = conversationRef.current;
+
+    applyConversation({
+      public_id: publicId,
+      status: "closed",
+      closed_at: current?.public_id === publicId ? current.closed_at : null,
+    });
+  }
+
+  function authHeaders(currentToken: string): Record<string, string> {
+    return {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+
+      // باید با middleware احراز هویت ویجت هماهنگ باشد.
+      Authorization: `Bearer ${currentToken}`,
+    };
+  }
+
+  // تاریخچه و اتصال Reverb در یک effect:
+  // بدون polling، با همگام‌سازی پس از subscription/reconnect.
   useEffect(() => {
     if (!visitorPublicId || !conversationPublicId || !token) {
       return;
     }
 
-    let isCancelled = false;
+    let disposed = false;
+    let loading = false;
+    let reloadRequested = false;
+    let stateRevision = 0;
 
-    const loadHistory = async () => {
+    const controller = new AbortController();
+
+    const currentVisitorId = visitorPublicId;
+    const currentConversationId = conversationPublicId;
+    const currentToken = token;
+
+    function updateConversation(next?: ConversationState) {
+      if (disposed || !next || next.public_id !== currentConversationId) {
+        return;
+      }
+
+      conversationRef.current = next;
+      setConversation(next);
+    }
+
+    async function loadHistory() {
+      if (disposed) return;
+
+      if (loading) {
+        reloadRequested = true;
+        return;
+      }
+
+      loading = true;
+      const revisionAtStart = stateRevision;
+
       try {
         let page = 1;
         let lastPage = 1;
-        const rawList: ServerMessageItem[] = [];
+        const collected: ApiMessage[] = [];
+
         do {
-        const res = await fetch(
-          `${API_BASE_URL}/visitors/${encodeURIComponent(visitorPublicId)}/conversations/${encodeURIComponent(conversationPublicId)}/messages?per_page=100&page=${page}`,
-          {
-            credentials: "omit",
-            headers: {
-              Accept: "application/json",
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
+          const response = await fetch(
+            `${API_BASE_URL}/visitors/${encodeURIComponent(currentVisitorId)}` +
+              `/conversations/${encodeURIComponent(currentConversationId)}` +
+              `/messages?per_page=100&page=${page}`,
+            {
+              credentials: "omit",
+              headers: authHeaders(currentToken),
+              signal: controller.signal,
             },
-          },
+          );
+
+          const result = (await response
+            .json()
+            .catch(() => null)) as ApiResponse | null;
+
+          if (!response.ok || !result) {
+            throw new Error(result?.message || "دریافت پیام‌ها انجام نشد.");
+          }
+
+          // رویداد جدیدتر با پاسخ قدیمی تاریخچه بازنویسی نشود.
+          if (stateRevision === revisionAtStart) {
+            updateConversation(result.conversation);
+          }
+
+          if (Array.isArray(result.data?.data)) {
+            collected.push(...result.data.data);
+          }
+
+          lastPage = result.data?.meta?.last_page ?? 1;
+          page += 1;
+        } while (page <= lastPage && !disposed);
+
+        if (disposed) return;
+
+        // انتظار: API صفحات را از قدیمی به جدید برگرداند.
+        const mapped = collected
+          .map(mapMessage)
+          .filter((message): message is ChatMessage => message !== null);
+
+        setMessages((previous) => {
+          const byId = new Map<string, ChatMessage>();
+
+          for (const message of mapped) {
+            byId.set(message.id, message);
+          }
+
+          // پیام‌هایی که هم‌زمان از سوکت یا ارسال آمده‌اند حفظ شوند.
+          for (const message of previous) {
+            if (message.id !== initialWelcomeMessage.id) {
+              byId.set(message.id, message);
+            }
+          }
+
+          return [initialWelcomeMessage, ...byId.values()];
+        });
+      } catch (error) {
+        if (disposed || controller.signal.aborted) return;
+
+        console.warn("History loading failed:", error);
+
+        setMessageError(
+          error instanceof Error ? error.message : "دریافت پیام‌ها انجام نشد.",
         );
-
-        if (!res.ok) throw new Error("خطا در دریافت پیام‌ها");
-
-        const result = await res.json();
-
-        if (Array.isArray(result.data?.data)) rawList.push(...result.data.data);
-        lastPage = result.data?.meta?.last_page || 1;
-        page++;
-        } while (page <= lastPage && !isCancelled);
-
-        if (!isCancelled && rawList.length > 0) {
-          const mappedMessages: ChatMessage[] = rawList.map((item) => ({
-            id: String(item.public_id || item.id),
-            sender: item.sender === "operator" ? "operator" : "visitor",
-            text: item.body || "",
-            created_at: item.created_at,
-          }));
-
-          setMessages((previous) => {
-            const ids = new Set(mappedMessages.map((message) => message.id));
-            return [initialWelcomeMessage, ...mappedMessages, ...previous.filter((message) => message.id !== initialWelcomeMessage.id && !ids.has(message.id) && !message.id.startsWith("temp-"))];
-          });
-        }
-      } catch (err) {
-        console.warn("خطا در دریافت پیام‌ها:", err);
-        if (!isCancelled) setMessageError("دریافت پیام‌ها انجام نشد.");
       } finally {
-        if (!isCancelled) {
+        loading = false;
+
+        if (!disposed) {
           setIsLoadingHistory(false);
+
+          if (reloadRequested) {
+            reloadRequested = false;
+            void loadHistory();
+          }
         }
       }
-    };
+    }
+
+    function handleMessage(payload: MessageEvent) {
+      if (disposed || !payload.message) return;
+
+      const mapped = mapMessage(payload.message);
+
+      if (!mapped) return;
+
+      setMessages((previous) =>
+        previous.some((message) => message.id === mapped.id)
+          ? previous
+          : [...previous, mapped],
+      );
+    }
+
+    function handleConversationUpdated(payload: ConversationUpdatedEvent) {
+      if (
+        disposed ||
+        payload.conversation?.public_id !== currentConversationId
+      ) {
+        return;
+      }
+
+      stateRevision += 1;
+      updateConversation(payload.conversation);
+    }
+
+    function handleSubscribed() {
+      void loadHistory();
+    }
+
+    function handleSubscriptionError(error: unknown) {
+      if (disposed) return;
+
+      console.warn("Widget subscription failed:", error);
+
+      setMessageError("اتصال زنده برقرار نشد. لطفاً دوباره تلاش کنید.");
+    }
 
     void loadHistory();
-    const timer = window.setInterval(() => void loadHistory(), 15000);
+
+    let cleanupSocket: (() => void) | undefined;
+
+    try {
+      const echo = getEcho(currentToken);
+
+      if (echo) {
+        const channel = echo.private(`conversation.${currentConversationId}`);
+
+        channel.listen(".SendMessage", handleMessage);
+
+        // این رویداد باید در بک‌اند اضافه شود.
+        channel.listen(".ConversationUpdated", handleConversationUpdated);
+
+        channel.subscribed(handleSubscribed);
+        channel.error(handleSubscriptionError);
+
+        cleanupSocket = () => {
+          channel.stopListening(".SendMessage", handleMessage);
+
+          channel.stopListening(
+            ".ConversationUpdated",
+            handleConversationUpdated,
+          );
+
+          channel.subscription.unbind(
+            "pusher:subscription_succeeded",
+            handleSubscribed,
+          );
+
+          channel.subscription.unbind(
+            "pusher:subscription_error",
+            handleSubscriptionError,
+          );
+
+          // اتصال مشترک Echo را disconnect نمی‌کنیم.
+        };
+      } else {
+        handleSubscriptionError(new Error("Echo instance is unavailable"));
+      }
+    } catch (error) {
+      handleSubscriptionError(error);
+    }
 
     return () => {
-      isCancelled = true;
-      window.clearInterval(timer);
+      disposed = true;
+      controller.abort();
+      cleanupSocket?.();
     };
   }, [visitorPublicId, conversationPublicId, token]);
 
-  // ۲. لیسنر سوکت (گوش دادن به پیام‌های جدید در کانال این مکالمه)
-  useEffect(() => {
-    if (!conversationPublicId || !token) {
-      console.log("WS: conversationPublicId is null yet");
-      return;
-    }
+  // ثبت بازدیدکننده
+  async function handleVisitorSubmit(formData: VisitorFormData) {
+    if (visitorLockRef.current) return;
 
-    const echo = getEcho(token);
-
-    if (!echo) {
-      console.warn("WS: Echo instance not found");
-      return;
-    }
-
-    const channel = echo.private(`conversation.${conversationPublicId}`);
-
-    channel.listen(".SendMessage", (payload: SocketMessagePayload) => {
-      const incomingMessage = payload.message;
-      if (!incomingMessage) return;
-
-      const incomingId = String(
-        incomingMessage.public_id || incomingMessage.id,
-      );
-
-      setMessages((prev) => {
-        // ۱. اگر پیام با همین ID دقیقاً در لیست وجود دارد، رد شو
-        const existsById = prev.some((msg) => msg.id === incomingId);
-        if (existsById) return prev;
-
-        // ۲. اگر پیام از سمت ویزیتور است و یک پیام موقت (temp) با همین متن داریم، پیام موقت را آپدیت کن
-        if (incomingMessage.sender === "visitor") {
-          const tempIndex = prev.findIndex(
-            (msg) =>
-              msg.id.startsWith("temp-") && msg.text === incomingMessage.body,
-          );
-
-          if (tempIndex !== -1) {
-            const updated = [...prev];
-            updated[tempIndex] = {
-              id: incomingId,
-              sender: "visitor",
-              text: incomingMessage.body,
-              created_at: incomingMessage.created_at,
-            };
-            return updated;
-          }
-        }
-
-        // ۳. پیام جدید (به خصوص پیام‌های اپراتور) را به انتهای لیست اضافه کن
-        const newChatMsg: ChatMessage = {
-          id: incomingId,
-          sender: incomingMessage.sender,
-          text: incomingMessage.body,
-          created_at: incomingMessage.created_at,
-        };
-
-        return [...prev, newChatMsg];
-      });
-    });
-
-    return () => {
-      channel.stopListening(".SendMessage");
-      echo.leave(`conversation.${conversationPublicId}`);
-    };
-  }, [conversationPublicId, token]);
-
-  // ۳. ثبت بازدیدکننده (فرم ورود)
-  const handleVisitorSubmit = async (formData: VisitorFormData) => {
-    if (isSubmittingVisitor) return;
-
-    if (!websiteID?.trim()) {
+    if (!websiteID.trim()) {
       setVisitorError("شناسه وب‌سایت معتبر نیست.");
       return;
     }
 
+    visitorLockRef.current = true;
     setIsSubmittingVisitor(true);
     setVisitorError("");
 
@@ -226,122 +406,194 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
         },
       );
 
-      const responseData = (await response
+      const result = (await response
         .json()
-        .catch(() => null)) as VisitorApiResponse | null;
+        .catch(() => null)) as ApiResponse | null;
 
-      if (!response.ok || !responseData) {
-        throw new Error(responseData?.message || "خطا در برقراری ارتباط");
+      const returnedVisitorId = result?.data?.public_id;
+      const returnedToken = result?.data?.token;
+
+      if (!response.ok || !returnedVisitorId || !returnedToken) {
+        throw new Error(result?.message || "ثبت اطلاعات انجام نشد.");
       }
 
-      const returnedVisitorId = responseData.data?.public_id;
-      const returnedToken = responseData.data?.token;
-      if (returnedVisitorId && typeof returnedToken === "string") {
-        try {
-          localStorage.setItem(visitorKey, returnedVisitorId);
-          localStorage.setItem(tokenKey, returnedToken);
-          localStorage.removeItem(convKey);
-        } catch (e) {
-          console.warn("Storage warning:", e);
-        }
-        setVisitorPublicId(returnedVisitorId);
-        setToken(returnedToken);
-        setConversationPublicId(null);
-      } else {
-        throw new Error("پاسخ سرور معتبر نیست.");
+      try {
+        localStorage.setItem(visitorKey, returnedVisitorId);
+        localStorage.setItem(tokenKey, returnedToken);
+        localStorage.removeItem(convKey);
+      } catch (error) {
+        console.warn("Storage warning:", error);
       }
 
+      setVisitorPublicId(returnedVisitorId);
+      setToken(returnedToken);
+      setConversationPublicId(null);
+
+      conversationRef.current = null;
+      setConversation(null);
+
+      setMessages([initialWelcomeMessage]);
+      setMessageError("");
       setVisitorStep("chat");
-    } catch (err) {
+    } catch (error) {
       setVisitorError(
-        err instanceof Error ? err.message : "خطا در ارسال اطلاعات",
+        error instanceof Error ? error.message : "خطا در ارسال اطلاعات",
       );
     } finally {
+      visitorLockRef.current = false;
       setIsSubmittingVisitor(false);
     }
-  };
+  }
 
-  // ۴. ارسال پیام
-  const handleSendMessage = async (text: string) => {
-    if (!visitorPublicId || !token || isSendingMessage) return false;
+  // ارسال پیام
+  async function handleSendMessage(rawText: string): Promise<boolean> {
+    const text = rawText.trim();
+
+    if (!text || !visitorPublicId || !token || sendLockRef.current) {
+      return false;
+    }
+
+    if (isClosed(conversationRef.current)) {
+      setMessageError("این گفتگو بسته شده است.");
+      return false;
+    }
+
+    // تا دریافت وضعیت مکالمه قبلی، ارسال انجام نشود.
+    if (conversationPublicId && isLoadingHistory) {
+      setMessageError("لطفاً تا دریافت اطلاعات گفتگو صبر کنید.");
+      return false;
+    }
+
+    sendLockRef.current = true;
+    setIsSendingMessage(true);
     setMessageError("");
 
-    // ثبت پیام خود ویزیتور به صورت خوش‌بینانه (Optimistic)
-    const tempMessageId = `temp-${Date.now()}`;
-    const optimisticMessage: ChatMessage = {
-      id: tempMessageId,
-      sender: "visitor",
-      text,
-    };
-    setMessages((prev) => [...prev, optimisticMessage]);
-    setIsSendingMessage(true);
+    const tempId = `temp-${crypto.randomUUID()}`;
+    const currentConversationId = conversationPublicId;
+
+    setMessages((previous) => [
+      ...previous,
+      {
+        id: tempId,
+        sender: "visitor",
+        text,
+      },
+    ]);
 
     try {
-      if (!conversationPublicId) {
-        // پیام اول: ایجاد مکالمه
-        const response = await fetch(
-          `${API_BASE_URL}/visitors/${encodeURIComponent(visitorPublicId)}/conversations`,
-          {
-            method: "POST",
-            credentials: "omit",
-            headers: {
-              Accept: "application/json",
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ message: text }),
-          },
-        );
+      const url = currentConversationId
+        ? `${API_BASE_URL}/visitors/${encodeURIComponent(visitorPublicId)}` +
+          `/conversations/${encodeURIComponent(currentConversationId)}/messages`
+        : `${API_BASE_URL}/visitors/${encodeURIComponent(visitorPublicId)}` +
+          `/conversations`;
 
-        const convData = (await response.json()) as ConversationApiResponse;
+      const response = await fetch(url, {
+        method: "POST",
+        credentials: "omit",
+        headers: authHeaders(token),
+        body: JSON.stringify(
+          currentConversationId ? { body: text } : { message: text },
+        ),
+      });
 
-        if (response.ok && convData.data?.public_id) {
-          const newConvId = convData.data.public_id;
-          try {
-            localStorage.setItem(convKey, newConvId);
-          } catch (e) {
-            console.warn(e);
-          }
-          setConversationPublicId(newConvId);
-        } else {
-          throw new Error(convData.message || "ارسال پیام انجام نشد.");
+      const result = (await response
+        .json()
+        .catch(() => null)) as ApiResponse | null;
+
+      if (
+        result?.conversation &&
+        result.conversation.public_id === currentConversationId
+      ) {
+        applyConversation(result.conversation);
+      }
+
+      if (!response.ok || !result?.data) {
+        const errorMessage = result?.message?.trim() ?? "";
+
+        const conversationWasClosed =
+          result?.code === "conversation_closed" ||
+          errorMessage === "این گفتگو بسته شده است." ||
+          errorMessage === "این گفتگو بسته شده است";
+
+        if (currentConversationId && conversationWasClosed) {
+          markConversationClosed(currentConversationId);
         }
-      } else {
-        // پیام‌های بعدی در مکالمه جاری
-        const response = await fetch(
-          `${API_BASE_URL}/visitors/${encodeURIComponent(
-            visitorPublicId,
-          )}/conversations/${encodeURIComponent(conversationPublicId)}/messages`,
-          {
-            method: "POST",
-            credentials: "omit",
-            headers: {
-              Accept: "application/json",
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({ body: text }),
-          },
+
+        throw new Error(errorMessage || "ارسال پیام انجام نشد.");
+      }
+
+      if (!currentConversationId) {
+        const newId = result.data.public_id;
+
+        if (!newId) {
+          throw new Error("پاسخ ایجاد گفتگو معتبر نیست.");
+        }
+
+        if (result.conversation?.public_id === newId) {
+          applyConversation(result.conversation);
+        } else if (typeof result.data.status === "string") {
+          applyConversation({
+            public_id: newId,
+            status: result.data.status,
+            closed_at: result.data.closed_at ?? null,
+          });
+        }
+
+        try {
+          localStorage.setItem(convKey, newId);
+        } catch (error) {
+          console.warn("Storage warning:", error);
+        }
+
+        // تاریخچهٔ گفتگوی جدید پیام اول را از سرور دریافت می‌کند.
+        setMessages((previous) =>
+          previous.filter((message) => message.id !== tempId),
         );
-        const result = await response.json().catch(() => null);
-        if (!response.ok || !result?.data) throw new Error(result?.message || "ارسال پیام انجام نشد.");
-        const item = result.data as ServerMessageItem;
-        const id = String(item.public_id || item.id);
-        setMessages((prev) => {
-          const withoutTemp = prev.filter((message) => message.id !== tempMessageId);
-          return withoutTemp.some((message) => message.id === id) ? withoutTemp : [...withoutTemp, { id, sender: "visitor", text: item.body || text, created_at: item.created_at }];
+
+        setIsLoadingHistory(true);
+        setConversationPublicId(newId);
+      } else {
+        const item = result.data;
+
+        const mapped = mapMessage({
+          id: item.id,
+          public_id: item.public_id,
+          sender: "visitor",
+          body: item.body ?? text,
+          created_at: item.created_at,
+        });
+
+        if (!mapped) {
+          throw new Error("پاسخ پیام معتبر نیست.");
+        }
+
+        setMessages((previous) => {
+          const withoutTemp = previous.filter(
+            (message) => message.id !== tempId,
+          );
+
+          return withoutTemp.some((message) => message.id === mapped.id)
+            ? withoutTemp
+            : [...withoutTemp, mapped];
         });
       }
+
       return true;
     } catch (error) {
-      console.error("Message send failure:", error);
-      setMessages((prev) => prev.filter((message) => message.id !== tempMessageId));
-      setMessageError(error instanceof Error ? error.message : "ارسال پیام انجام نشد.");
+      setMessages((previous) =>
+        previous.filter((message) => message.id !== tempId),
+      );
+
+      setMessageError(
+        error instanceof Error ? error.message : "ارسال پیام انجام نشد.",
+      );
+
       return false;
     } finally {
+      sendLockRef.current = false;
       setIsSendingMessage(false);
     }
-  };
+  }
 
   return {
     isOpen,
@@ -355,5 +607,6 @@ export default function useWidget({ websiteID }: { websiteID: string }) {
     isSendingMessage,
     messageError,
     handleSendMessage,
+    isConversationClosed: isClosed(conversation),
   };
 }

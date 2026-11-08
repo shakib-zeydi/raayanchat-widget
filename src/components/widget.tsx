@@ -25,6 +25,7 @@ export default function Widget({ websiteId, themeColor = "#09c82c" }: IProps) {
     isSendingMessage,
     messageError,
     handleSendMessage,
+    isConversationClosed,
   } = useWidget({ websiteID: websiteId });
 
   const [hasNewMessage, setHasNewMessage] = useState(false);
@@ -82,11 +83,16 @@ export default function Widget({ websiteId, themeColor = "#09c82c" }: IProps) {
               themeColor={themeColor}
               isLoadingMessages={isLoadingHistory}
             />
-            {messageError && <p className="px-3 text-xs text-red-600" role="alert">{messageError}</p>}
+            {messageError && !isConversationClosed && (
+              <p className="px-3 text-xs text-red-600" role="alert">
+                {messageError}
+              </p>
+            )}
             <MessageInput
               themeColor={themeColor}
               isSending={isSendingMessage}
               onSend={handleSendMessage}
+              isClosed={isConversationClosed}
             />
           </>
         )}
