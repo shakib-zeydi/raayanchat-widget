@@ -48,7 +48,7 @@ export default function MessageList({
 
             <div
               style={isUser ? { backgroundColor: themeColor } : undefined}
-              className={`max-w-[75%] rounded-2xl px-3.5 py-2.5 ... ${
+              className={`max-w-[75%] whitespace-pre-wrap wrap-break-word rounded-2xl px-3.5 py-2.5 leading-6 ${
                 isUser
                   ? "rounded-bl-xs text-white"
                   : "rounded-br-xs border border-gray-100 bg-white text-gray-800"

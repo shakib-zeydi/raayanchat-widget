@@ -1,10 +1,3 @@
-interface ChatMessage {
-  id: string;
-  sender: "operator" | "visitor";
-  text: string;
-  created_at?: string;
-}
-
 interface WidgetProps {
   websiteId: string;
   themeColor?: string;
@@ -14,6 +7,20 @@ interface VisitorFormData {
   first_name: string;
   last_name: string;
   email: string;
+}
+
+interface VisitorSession {
+  publicId: string;
+  token: string;
+}
+
+type ConversationMode = "ai" | "human";
+
+interface ChatMessage {
+  id: string;
+  sender: "visitor" | "operator" | "assistant";
+  text: string;
+  created_at?: string;
 }
 
 interface VisitorApiResponse {

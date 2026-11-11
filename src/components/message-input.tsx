@@ -4,6 +4,7 @@ interface IProps {
   themeColor: string;
   isSending: boolean;
   isClosed: boolean;
+  isDisabled?: boolean;
   onSend: (text: string) => Promise<boolean>;
 }
 
@@ -11,6 +12,7 @@ export default function MessageInput({
   themeColor,
   isSending,
   isClosed,
+  isDisabled = false,
   onSend,
 }: IProps) {
   const [value, setValue] = useState("");
@@ -21,7 +23,7 @@ export default function MessageInput({
 
       const text = value.trim();
 
-      if (!text || isSending || isClosed) return;
+      if (!text || isSending || isClosed || isDisabled) return;
 
       if (await onSend(text)) {
         setValue("");
@@ -58,7 +60,7 @@ export default function MessageInput({
 
           <button
             type="submit"
-            disabled={!value.trim() || isSending}
+            disabled={!value.trim() || isSending || isDisabled}
             style={{ backgroundColor: themeColor }}
             className="shrink-0 cursor-pointer rounded-xl px-4 py-2.5 text-xs font-semibold text-white transition hover:opacity-90 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
           >
