@@ -82,6 +82,7 @@ function mapMessage(item: ApiMessage): ChatMessage | null {
 
   return {
     id: String(id),
+    publicId: item.public_id,
     sender: item.sender,
     text: item.body ?? "",
     created_at: item.created_at,
@@ -529,6 +530,7 @@ export default function useHumanConversation({
   }
 
   return {
+    conversationPublicId,
     messages,
     isLoadingHistory,
     isSendingMessage,

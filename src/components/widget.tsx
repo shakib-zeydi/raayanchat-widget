@@ -8,6 +8,7 @@ import ChatIcon from "./chat-icon";
 import ConversationModeSelector from "./conversation-mode-selector";
 import HumanChat from "./human-chat";
 import VisitorFormComponent from "./visitor-form";
+import useHumanNotifications from "../hooks/use-human-notifications";
 
 interface WidgetProps {
   websiteId: string;
@@ -27,7 +28,14 @@ export default function Widget(props: WidgetProps) {
 function WidgetContent({ websiteId, themeColor = "#09c82c" }: WidgetProps) {
   const [isOpen, setIsOpen] = useState(false);
 
-  const [hasUnreadHumanMessage, setHasUnreadHumanMessage] = useState(false);
+  const { session, isSubmitting, error, submitVisitor } = useVisitorSession({
+    websiteId,
+  });
+
+  const { unreadCount, refresh: refreshHumanNotifications } =
+    useHumanNotifications(session ?? null);
+
+  const hasUnreadHumanMessage = unreadCount > 0;
 
   const [navigation, setNavigation] = useState<ConversationNavigation>({
     activeMode: null,
@@ -35,12 +43,8 @@ function WidgetContent({ websiteId, themeColor = "#09c82c" }: WidgetProps) {
   });
 
   const handleOperatorMessage = useCallback(() => {
-    const isHumanChatVisible = isOpen && navigation.activeMode === "human";
-
-    if (!isHumanChatVisible) {
-      setHasUnreadHumanMessage(true);
-    }
-  }, [isOpen, navigation.activeMode]);
+    refreshHumanNotifications();
+  }, [refreshHumanNotifications]);
 
   function selectMode(mode: ConversationMode) {
     setNavigation((previous) => ({
@@ -49,10 +53,6 @@ function WidgetContent({ websiteId, themeColor = "#09c82c" }: WidgetProps) {
         ? previous.visitedModes
         : [...previous.visitedModes, mode],
     }));
-
-    if (mode === "human") {
-      setHasUnreadHumanMessage(false);
-    }
   }
 
   function showModeSelector() {
@@ -63,18 +63,8 @@ function WidgetContent({ websiteId, themeColor = "#09c82c" }: WidgetProps) {
   }
 
   function toggleChat() {
-    const nextIsOpen = !isOpen;
-
-    setIsOpen(nextIsOpen);
-
-    if (nextIsOpen && navigation.activeMode === "human") {
-      setHasUnreadHumanMessage(false);
-    }
+    setIsOpen((previous) => !previous);
   }
-
-  const { session, isSubmitting, error, submitVisitor } = useVisitorSession({
-    websiteId,
-  });
 
   return (
     <div
@@ -106,6 +96,7 @@ function WidgetContent({ websiteId, themeColor = "#09c82c" }: WidgetProps) {
             onBack={showModeSelector}
             onOperatorMessage={handleOperatorMessage}
             hasUnreadHumanMessage={hasUnreadHumanMessage}
+            isOpen={isOpen}
           />
         ) : (
           <VisitorFormComponent
@@ -178,6 +169,7 @@ interface ConversationScreensProps {
   onBack: () => void;
   onOperatorMessage: (message: ChatMessage) => void;
   hasUnreadHumanMessage: boolean;
+  isOpen: boolean;
 }
 
 function ConversationScreens({
@@ -189,6 +181,7 @@ function ConversationScreens({
   onBack,
   onOperatorMessage,
   hasUnreadHumanMessage,
+  isOpen,
 }: ConversationScreensProps) {
   const hasVisitedAi = navigation.visitedModes.includes("ai");
   const hasVisitedHuman = navigation.visitedModes.includes("human");
@@ -243,6 +236,7 @@ function ConversationScreens({
             themeColor={themeColor}
             onBack={onBack}
             onOperatorMessage={onOperatorMessage}
+            isActive={isOpen && navigation.activeMode === "human"}
           />
         </div>
       )}

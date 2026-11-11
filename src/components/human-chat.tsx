@@ -1,4 +1,7 @@
+import { useState } from "react";
+
 import useHumanConversation from "../hooks/use-human-conversation";
+import useHumanConversationRead from "../hooks/use-human-conversation-read";
 
 import MessageInput from "./message-input";
 import MessageList from "./message-list";
@@ -9,6 +12,7 @@ interface HumanChatProps {
   themeColor: string;
   onBack: () => void;
   onOperatorMessage?: (message: ChatMessage) => void;
+  isActive: boolean;
 }
 
 export default function HumanChat(props: HumanChatProps) {
@@ -27,8 +31,12 @@ function HumanChatContent({
   themeColor,
   onBack,
   onOperatorMessage,
+  isActive,
 }: HumanChatProps) {
+  const [readCandidate, setReadCandidate] = useState<string | null>(null);
+
   const {
+    conversationPublicId,
     messages,
     isLoadingHistory,
     isSendingMessage,
@@ -39,6 +47,13 @@ function HumanChatContent({
     websiteId,
     session,
     onOperatorMessage,
+  });
+
+  useHumanConversationRead({
+    session,
+    conversationPublicId,
+    messagePublicId: readCandidate,
+    isActive: isActive && !isLoadingHistory,
   });
 
   return (
@@ -62,6 +77,8 @@ function HumanChatContent({
         messages={messages}
         themeColor={themeColor}
         isLoadingMessages={isLoadingHistory}
+        isActive={isActive}
+        onReadCandidate={setReadCandidate}
       />
 
       {messageError && (

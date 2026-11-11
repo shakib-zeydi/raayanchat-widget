@@ -18,6 +18,7 @@ type ConversationMode = "ai" | "human";
 
 interface ChatMessage {
   id: string;
+  publicId?: string;
   sender: "visitor" | "operator" | "assistant";
   text: string;
   created_at?: string;
@@ -61,4 +62,16 @@ interface SocketMessagePayload {
     sender: "visitor" | "operator";
     created_at?: string;
   };
+}
+
+interface HumanConversationStatus {
+  public_id: string;
+  status: string;
+  unread_count: number;
+  last_message_at: string | null;
+}
+
+interface HumanNotificationsStatus {
+  unread_count: number;
+  conversations: HumanConversationStatus[];
 }
