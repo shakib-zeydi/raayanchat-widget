@@ -60,6 +60,12 @@ interface ConversationUpdatedEvent {
   conversation: ConversationState;
 }
 
+interface UseHumanConversationOptions {
+  websiteId: string;
+  session: VisitorSession;
+  onOperatorMessage?: (message: ChatMessage) => void;
+}
+
 function isClosed(conversation: ConversationState | null): boolean {
   return Boolean(
     conversation &&
@@ -90,6 +96,7 @@ interface UseHumanConversationOptions {
 export default function useHumanConversation({
   websiteId,
   session,
+  onOperatorMessage,
 }: UseHumanConversationOptions) {
   const storage = useMemo(() => createWidgetStorage(websiteId), [websiteId]);
 
@@ -106,6 +113,14 @@ export default function useHumanConversation({
 
   const conversationRef = useRef<ConversationState | null>(null);
   const sendLockRef = useRef(false);
+
+  const onOperatorMessageRef = useRef(onOperatorMessage);
+
+  const notifiedOperatorMessageIdsRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    onOperatorMessageRef.current = onOperatorMessage;
+  }, [onOperatorMessage]);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     initialWelcomeMessage,
@@ -280,6 +295,15 @@ export default function useHumanConversation({
           ? previous
           : [...previous, mapped],
       );
+
+      if (
+        mapped.sender === "operator" &&
+        !notifiedOperatorMessageIdsRef.current.has(mapped.id)
+      ) {
+        notifiedOperatorMessageIdsRef.current.add(mapped.id);
+
+        onOperatorMessageRef.current?.(mapped);
+      }
     }
 
     function handleConversationUpdated(payload: ConversationUpdatedEvent) {

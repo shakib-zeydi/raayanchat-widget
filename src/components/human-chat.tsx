@@ -8,6 +8,7 @@ interface HumanChatProps {
   session: VisitorSession;
   themeColor: string;
   onBack: () => void;
+  onOperatorMessage?: (message: ChatMessage) => void;
 }
 
 export default function HumanChat(props: HumanChatProps) {
@@ -25,6 +26,7 @@ function HumanChatContent({
   session,
   themeColor,
   onBack,
+  onOperatorMessage,
 }: HumanChatProps) {
   const {
     messages,
@@ -36,6 +38,7 @@ function HumanChatContent({
   } = useHumanConversation({
     websiteId,
     session,
+    onOperatorMessage,
   });
 
   return (
