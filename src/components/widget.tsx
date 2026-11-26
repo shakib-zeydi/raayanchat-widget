@@ -154,7 +154,7 @@ function WidgetContent({ websiteId, themeColor = "#09c82c" }: WidgetProps) {
           }`}
         >
           {/* <ChatIcon /> */}
-          <img src="/images/logo.png" alt="logo-image" />
+          <img src="https://cdn.rayanfanavari.ir/images/logo.png" alt="logo-image" />
         </span>
       </button>
     </div>
