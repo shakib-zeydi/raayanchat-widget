@@ -4,7 +4,7 @@ import useVisitorSession from "../hooks/use-visitor-session";
 
 import AiChat from "./ai-chat";
 import ChatHeader from "./chat-header";
-import ChatIcon from "./chat-icon";
+// import ChatIcon from "./chat-icon";
 import ConversationModeSelector from "./conversation-mode-selector";
 import HumanChat from "./human-chat";
 import VisitorFormComponent from "./visitor-form";
@@ -153,7 +153,8 @@ function WidgetContent({ websiteId, themeColor = "#09c82c" }: WidgetProps) {
               : "scale-100 rotate-0 opacity-100"
           }`}
         >
-          <ChatIcon />
+          {/* <ChatIcon /> */}
+          <img src="/images/logo.png" alt="logo-image" />
         </span>
       </button>
     </div>
