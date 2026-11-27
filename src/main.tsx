@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import Widget from "./components/widget";
+import PreviewSetup from "./components/preview-setup";
 import widgetCss from "./assets/css/index.css?inline";
 
 function injectFontToHead() {
@@ -26,9 +27,17 @@ function initWidget() {
   const currentScript =
     document.currentScript || document.querySelector("script[data-website-id]");
 
-  const websiteId = currentScript?.getAttribute("data-website-id") || "";
+  const websiteId = currentScript?.getAttribute("data-website-id") ||
+    (import.meta.env.DEV ? new URLSearchParams(window.location.search).get("website_id") : null) || "01m89mbgarg8xyvgx66vgkzann";
   const themeColor =
     currentScript?.getAttribute("data-theme-color") || "#09c82c";
+
+  if (!websiteId.trim()) {
+    console.error("Rayan Chat: data-website-id is missing.");
+    const previewRoot = import.meta.env.DEV ? document.getElementById("root") : null;
+    if (previewRoot) createRoot(previewRoot).render(<PreviewSetup />);
+    return;
+  }
 
   // ۱. ساخت کانتینر در انتهای صفحه کاربر
   const container = document.createElement("div");
