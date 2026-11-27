@@ -6,6 +6,8 @@ export interface WidgetSettings {
   position_y: "top" | "bottom";
   offset_x?: number;
   offset_y: number;
+  button_width?: number;
+  button_height?: number;
   icon: { type: "svg"; value: string } | { type: "image" | "video"; url: string } | null;
 }
 
@@ -18,6 +20,8 @@ export async function getWidgetSettings(websiteId: string, signal: AbortSignal):
   if (!response.data || !["left", "right"].includes(response.data.position_x) ||
       !["top", "bottom"].includes(response.data.position_y) ||
       (response.data.offset_x !== undefined && !Number.isFinite(response.data.offset_x)) ||
+      (response.data.button_width !== undefined && !Number.isFinite(response.data.button_width)) ||
+      (response.data.button_height !== undefined && !Number.isFinite(response.data.button_height)) ||
       !Number.isFinite(response.data.offset_y)) {
     throw new Error("Widget settings response is invalid.");
   }

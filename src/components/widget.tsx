@@ -62,10 +62,14 @@ function WidgetContent({ websiteId, themeColor: fallbackColor = "#09c82c", setti
   const positionX = settings.position_x;
   const positionY = settings.position_y;
   const offset = Math.min(500, Math.max(0, settings.offset_y));
+  const buttonWidth = Math.min(200, Math.max(32, settings.button_width ?? 56));
+  const buttonHeight = Math.min(200, Math.max(32, settings.button_height ?? 56));
+  const visibleWidth = `min(${buttonWidth}px, 100vw)`;
+  const visibleHeight = `min(${buttonHeight}px, 100vh)`;
   const horizontalOffset = Math.min(500, Math.max(0, settings.offset_x ?? 20));
-  const horizontalPosition = `min(${horizontalOffset}px, max(0px, calc(100vw - 3.5rem)))`;
+  const horizontalPosition = `min(${horizontalOffset}px, max(0px, calc(100vw - ${visibleWidth})))`;
   const panelHorizontalPosition = `min(${horizontalPosition}, max(0px, calc(100vw - 18rem)))`;
-  const verticalPosition = `min(${offset}px, max(0px, calc(100vh - 11rem)))`;
+  const verticalPosition = `min(${offset}px, max(0px, calc(100vh - ${visibleHeight} - 7.5rem)))`;
   const iconUrl = settings.icon?.type === "svg"
     ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(settings.icon.value)}`
     : settings.icon?.type === "image" || settings.icon?.type === "video" ? settings.icon.url : null;
@@ -121,8 +125,8 @@ function WidgetContent({ websiteId, themeColor: fallbackColor = "#09c82c", setti
         inert={!isOpen}
         style={{
           [positionX]: panelHorizontalPosition,
-          [positionY]: `calc(${verticalPosition} + 4.25rem)`,
-          maxHeight: `calc(100vh - ${verticalPosition} - 5rem)`,
+          [positionY]: `calc(${verticalPosition} + ${visibleHeight} + 12px)`,
+          maxHeight: `max(0px, calc(100vh - ${verticalPosition} - ${visibleHeight} - 24px))`,
           maxWidth: `calc(100vw - ${panelHorizontalPosition})`,
           transformOrigin: `${positionY} ${positionX}`,
         }}
@@ -160,7 +164,7 @@ function WidgetContent({ websiteId, themeColor: fallbackColor = "#09c82c", setti
       <button
         type="button"
         onClick={toggleChat}
-        style={{ backgroundColor: themeColor, [positionX]: horizontalPosition, [positionY]: verticalPosition }}
+        style={{ backgroundColor: themeColor, width: visibleWidth, height: visibleHeight, [positionX]: horizontalPosition, [positionY]: verticalPosition }}
         aria-label={
           isOpen
             ? "بستن پنجرهٔ چت"
@@ -170,7 +174,7 @@ function WidgetContent({ websiteId, themeColor: fallbackColor = "#09c82c", setti
         }
         aria-expanded={isOpen}
         aria-controls="rayan-widget-panel"
-        className="fixed z-999999 flex size-14 cursor-pointer items-center justify-center rounded-full text-white shadow-[0_8px_30px_rgb(0,0,0,0.2)] transition-all duration-300 hover:scale-105 active:scale-95"
+        className="fixed z-999999 flex cursor-pointer items-center justify-center rounded-full text-white shadow-[0_8px_30px_rgb(0,0,0,0.2)] transition-all duration-300 hover:scale-105 active:scale-95"
       >
         {hasUnreadHumanMessage && (
           <span
@@ -205,8 +209,8 @@ function WidgetContent({ websiteId, themeColor: fallbackColor = "#09c82c", setti
           {iconUrl && !iconFailed && settings.icon?.type === "video" ? (
             <video src={iconUrl} autoPlay muted loop playsInline className="size-full object-cover" crossOrigin="anonymous" onError={() => setIconFailed(true)} />
           ) : iconUrl && !iconFailed ? (
-            <img src={iconUrl} alt="" className={settings.icon?.type === "image" ? "size-full object-cover" : "size-7 object-contain"} crossOrigin="anonymous" referrerPolicy="origin" onError={() => setIconFailed(true)} />
-          ) : <ChatIcon />}
+            <img src={iconUrl} alt="" className={settings.icon?.type === "image" ? "size-full object-cover" : "size-1/2 object-contain"} crossOrigin="anonymous" referrerPolicy="origin" onError={() => setIconFailed(true)} />
+          ) : <ChatIcon className="size-1/2" />}
         </span>
       </button>
     </div>
