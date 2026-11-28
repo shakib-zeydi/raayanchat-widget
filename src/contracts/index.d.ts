@@ -75,3 +75,8 @@ interface HumanNotificationsStatus {
   unread_count: number;
   conversations: HumanConversationStatus[];
 }
+
+interface ConversationNavigation {
+  activeMode: ConversationMode | null;
+  visitedModes: ConversationMode[];
+}
