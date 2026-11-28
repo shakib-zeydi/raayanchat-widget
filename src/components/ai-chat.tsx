@@ -1,4 +1,5 @@
 import useAiConversation from "../hooks/use-ai-conversation";
+import Copyright from "./copyright";
 
 import MessageInput from "./message-input";
 import MessageList from "./message-list";
@@ -109,6 +110,8 @@ function AiChatContent({
         isDisabled={!canSend}
         onSend={sendMessage}
       />
+
+      <Copyright themeColor={themeColor} />
     </>
   );
 }

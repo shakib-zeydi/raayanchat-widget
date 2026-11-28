@@ -1,3 +1,5 @@
+import Copyright from "./copyright";
+
 interface ConversationModeSelectorProps {
   themeColor: string;
   onSelect: (mode: ConversationMode) => void;
@@ -46,6 +48,8 @@ export default function ConversationModeSelector({
           ارسال پیام برای تیم پشتیبانی
         </span>
       </button>
+
+      <Copyright themeColor={themeColor} />
     </div>
   );
 }

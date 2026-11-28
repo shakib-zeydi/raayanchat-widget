@@ -5,6 +5,7 @@ import useHumanConversationRead from "../hooks/use-human-conversation-read";
 
 import MessageInput from "./message-input";
 import MessageList from "./message-list";
+import Copyright from "./copyright";
 
 interface HumanChatProps {
   websiteId: string;
@@ -97,6 +98,8 @@ function HumanChatContent({
         isDisabled={isLoadingHistory}
         onSend={handleSendMessage}
       />
+
+      <Copyright themeColor={themeColor} />
     </>
   );
 }
