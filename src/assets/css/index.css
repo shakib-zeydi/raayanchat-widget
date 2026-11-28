@@ -13,3 +13,11 @@
     -apple-system,
     sans-serif !important;
 }
+
+.rayan-widget-subtitle {
+  scrollbar-width: none;
+}
+
+.rayan-widget-subtitle::-webkit-scrollbar {
+  display: none;
+}

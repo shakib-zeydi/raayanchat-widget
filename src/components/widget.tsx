@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import useVisitorSession from "../hooks/use-visitor-session";
 
@@ -58,6 +58,8 @@ function WidgetLoader(props: WidgetProps) {
 function WidgetContent({ websiteId, themeColor: fallbackColor = "#09c82c", settings }: WidgetProps & { settings: WidgetSettings }) {
   const [isOpen, setIsOpen] = useState(false);
   const [iconFailed, setIconFailed] = useState(false);
+  const subtitleRef = useRef<HTMLSpanElement>(null);
+  const [subtitleDimensions, setSubtitleDimensions] = useState({ width: 0, height: 0 });
   const themeColor = settings.theme_color || fallbackColor;
   const positionX = settings.position_x;
   const positionY = settings.position_y;
@@ -72,8 +74,12 @@ function WidgetContent({ websiteId, themeColor: fallbackColor = "#09c82c", setti
   const subtitle = settings.button_subtitle?.trim() || "";
   const subtitleSize = Math.min(32, Math.max(10, settings.button_subtitle_size ?? 12));
   const subtitleColor = settings.button_subtitle_color ?? "#1f2937";
-  const subtitleSpace = Math.ceil(subtitleSize * 1.25) + 4;
-  const baseVerticalPosition = `min(${offset}px, max(0px, calc(100vh - ${visibleHeight} - 7.5rem)))`;
+  const subtitleSpace = subtitle ? subtitleDimensions.height + 4 : 0;
+  const buttonCenter = positionX === "left"
+    ? `calc(${horizontalPosition} + ${visibleWidth} / 2)`
+    : `calc(100vw - ${horizontalPosition} - ${visibleWidth} / 2)`;
+  const subtitleLeft = `clamp(8px, calc(${buttonCenter} - ${subtitleDimensions.width / 2}px), max(8px, calc(100vw - ${subtitleDimensions.width + 8}px)))`;
+  const baseVerticalPosition = `min(${offset}px, max(0px, calc(100vh - ${visibleHeight} - ${Math.max(120, positionY === "top" ? subtitleSpace : 0)}px)))`;
   const verticalPosition = subtitle && positionY === "bottom"
     ? `max(min(${subtitleSpace}px, max(0px, calc(100vh - ${visibleHeight}))), ${baseVerticalPosition})`
     : baseVerticalPosition;
@@ -81,6 +87,20 @@ function WidgetContent({ websiteId, themeColor: fallbackColor = "#09c82c", setti
   const iconUrl = settings.icon?.type === "svg"
     ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(settings.icon.value)}`
     : settings.icon?.type === "image" || settings.icon?.type === "video" ? settings.icon.url : null;
+
+  useLayoutEffect(() => {
+    const element = subtitleRef.current;
+    if (!element) return;
+
+    const measure = () => {
+      const { width, height } = element.getBoundingClientRect();
+      setSubtitleDimensions((previous) => previous.width === width && previous.height === height ? previous : { width, height });
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [subtitle]);
 
   const { session, isSubmitting, error, submitVisitor } = useVisitorSession({
     websiteId,
@@ -220,12 +240,31 @@ function WidgetContent({ websiteId, themeColor: fallbackColor = "#09c82c", setti
             <img src={iconUrl} alt="" className={settings.icon?.type === "image" ? "size-full object-cover" : "size-1/2 object-contain"} crossOrigin="anonymous" referrerPolicy="origin" onError={() => setIconFailed(true)} />
           ) : <ChatIcon className="size-1/2" />}
         </span>
-        {subtitle && (
-          <span aria-hidden="true" dir="auto" title={subtitle} style={{ color: subtitleColor, fontSize: subtitleSize, lineHeight: `${subtitleSize * 1.25}px` }} className="absolute left-1/2 top-full mt-1 w-max max-w-[min(12rem,calc(100vw-0.5rem))] -translate-x-1/2 truncate text-center">
-            {subtitle}
-          </span>
-        )}
       </button>
+      {subtitle && (
+        <span
+          ref={subtitleRef}
+          aria-hidden="true"
+          dir="auto"
+          style={{
+            color: subtitleColor,
+            fontSize: subtitleSize,
+            lineHeight: `${subtitleSize * 1.25}px`,
+            left: subtitleLeft,
+            width: "max-content",
+            maxWidth: "min(192px, max(0px, calc(100vw - 16px)))",
+            maxHeight: `max(0px, calc(100vh - ${visibleHeight} - 4px))`,
+            ...(positionY === "top"
+              ? { top: `calc(${verticalPosition} + ${visibleHeight} + 4px)` }
+              : { bottom: `calc(${verticalPosition} - ${subtitleSpace}px)` }),
+            whiteSpace: "pre-wrap",
+            overflowWrap: "anywhere",
+          }}
+          className="rayan-widget-subtitle fixed z-999999 overflow-y-auto text-center"
+        >
+          {subtitle}
+        </span>
+      )}
     </div>
   );
 }
