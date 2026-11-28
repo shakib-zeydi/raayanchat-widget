@@ -69,7 +69,15 @@ function WidgetContent({ websiteId, themeColor: fallbackColor = "#09c82c", setti
   const horizontalOffset = Math.min(500, Math.max(0, settings.offset_x ?? 20));
   const horizontalPosition = `min(${horizontalOffset}px, max(0px, calc(100vw - ${visibleWidth})))`;
   const panelHorizontalPosition = `min(${horizontalPosition}, max(0px, calc(100vw - 18rem)))`;
-  const verticalPosition = `min(${offset}px, max(0px, calc(100vh - ${visibleHeight} - 7.5rem)))`;
+  const subtitle = settings.button_subtitle?.trim() || "";
+  const subtitleSize = Math.min(32, Math.max(10, settings.button_subtitle_size ?? 12));
+  const subtitleColor = settings.button_subtitle_color ?? "#1f2937";
+  const subtitleSpace = Math.ceil(subtitleSize * 1.25) + 4;
+  const baseVerticalPosition = `min(${offset}px, max(0px, calc(100vh - ${visibleHeight} - 7.5rem)))`;
+  const verticalPosition = subtitle && positionY === "bottom"
+    ? `max(min(${subtitleSpace}px, max(0px, calc(100vh - ${visibleHeight}))), ${baseVerticalPosition})`
+    : baseVerticalPosition;
+  const panelGap = subtitle && positionY === "top" ? subtitleSpace + 12 : 12;
   const iconUrl = settings.icon?.type === "svg"
     ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(settings.icon.value)}`
     : settings.icon?.type === "image" || settings.icon?.type === "video" ? settings.icon.url : null;
@@ -125,8 +133,8 @@ function WidgetContent({ websiteId, themeColor: fallbackColor = "#09c82c", setti
         inert={!isOpen}
         style={{
           [positionX]: panelHorizontalPosition,
-          [positionY]: `calc(${verticalPosition} + ${visibleHeight} + 12px)`,
-          maxHeight: `max(0px, calc(100vh - ${verticalPosition} - ${visibleHeight} - 24px))`,
+          [positionY]: `calc(${verticalPosition} + ${visibleHeight} + ${panelGap}px)`,
+          maxHeight: `max(0px, calc(100vh - ${verticalPosition} - ${visibleHeight} - ${panelGap + 12}px))`,
           maxWidth: `calc(100vw - ${panelHorizontalPosition})`,
           transformOrigin: `${positionY} ${positionX}`,
         }}
@@ -165,13 +173,13 @@ function WidgetContent({ websiteId, themeColor: fallbackColor = "#09c82c", setti
         type="button"
         onClick={toggleChat}
         style={{ backgroundColor: themeColor, width: visibleWidth, height: visibleHeight, [positionX]: horizontalPosition, [positionY]: verticalPosition }}
-        aria-label={
+        aria-label={(
           isOpen
             ? "بستن پنجرهٔ چت"
             : hasUnreadHumanMessage
               ? "بازکردن چت؛ پیام جدید از اپراتور دارید"
               : "بازکردن پنجرهٔ چت"
-        }
+        ) + (subtitle ? `؛ ${subtitle}` : "")}
         aria-expanded={isOpen}
         aria-controls="rayan-widget-panel"
         className="fixed z-999999 flex cursor-pointer items-center justify-center rounded-full text-white shadow-[0_8px_30px_rgb(0,0,0,0.2)] transition-all duration-300 hover:scale-105 active:scale-95"
@@ -212,6 +220,11 @@ function WidgetContent({ websiteId, themeColor: fallbackColor = "#09c82c", setti
             <img src={iconUrl} alt="" className={settings.icon?.type === "image" ? "size-full object-cover" : "size-1/2 object-contain"} crossOrigin="anonymous" referrerPolicy="origin" onError={() => setIconFailed(true)} />
           ) : <ChatIcon className="size-1/2" />}
         </span>
+        {subtitle && (
+          <span aria-hidden="true" dir="auto" title={subtitle} style={{ color: subtitleColor, fontSize: subtitleSize, lineHeight: `${subtitleSize * 1.25}px` }} className="absolute left-1/2 top-full mt-1 w-max max-w-[min(12rem,calc(100vw-0.5rem))] -translate-x-1/2 truncate text-center">
+            {subtitle}
+          </span>
+        )}
       </button>
     </div>
   );
